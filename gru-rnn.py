@@ -1,12 +1,23 @@
+
+import collections
+import datetime
+import numpy
+import os
+import random
 import sys
 import theano
-import collections
-import numpy
-import random
+import time
 
 from gensim.models import Word2Vec
 
+from myplot import plot
+
 floatX=theano.config.floatX
+plot_caption = ""
+
+def update_plot_caption(name, value):
+    global plot_caption
+    plot_caption = plot_caption + name + ": " + str(value) + "\n"
 
 class RnnClassifier(object):
     def __init__(self, n_words, n_classes, word2id):
@@ -15,6 +26,11 @@ class RnnClassifier(object):
         word_embedding_size = 300
         recurrent_size = 100
         l2_regularisation = 0.0001
+
+        update_plot_caption("random_seed", random_seed)
+        update_plot_caption("word_embedding_size", word_embedding_size)
+        update_plot_caption("recurrent_size", recurrent_size)
+        update_plot_caption("l2_regularisation", l2_regularisation)
 
         # random number generator
         self.rng = numpy.random.RandomState(random_seed)
@@ -88,11 +104,10 @@ class RnnClassifier(object):
         i = 0
         for word in word2id:
             try:
-                vals[i] = model[word]
-                #print "word: " + word
-            except Exception, e:
+                #vals[i] = model[word]
                 pass
-                #print "Exception thrown for word: " + word + ", vector value for it is " + str(vals[i])  
+            except Exception, e:
+                pass 
             i = i + 1 
         self.params[name] = theano.shared(vals, name)
         return self.params[name]
@@ -134,7 +149,7 @@ def read_dataset(path):
         for line in f:
             line_parts = line.strip().split(",")
             #print str(line_parts)
-            dataset.append((line_parts[0], line_parts[1], get_level_from_string(line_parts[2])))
+            dataset.append((line_parts[0], line_parts[1]:[-1], get_level_from_string(line_parts[2])))
     #print str(dataset)
     return dataset
 
@@ -182,9 +197,15 @@ if __name__ == "__main__":
 
     # training parameters
     min_freq = -1
-    epochs = 3
-    learningrate = 0.0025
+    epochs = 25
+    learningrate = 0.01
     n_classes = 6
+
+    # params for plot caption
+    update_plot_caption("min_freq", min_freq)
+    update_plot_caption("epochs", epochs)
+    update_plot_caption("learningrate", learningrate)
+    update_plot_caption("n_classes", n_classes)
 
     # reading the datasets
     sentences_train = read_dataset(path_train)
@@ -197,8 +218,6 @@ if __name__ == "__main__":
     data_train = [(level, sentence2ids((word + " " + definition).split(), word2id)) for word, definition, level in sentences_train]
     data_test = [(level, sentence2ids((word + " " + definition).split(), word2id)) for word, definition, level in sentences_test]
 
-    #print "data_train: "
-    #print str(data_train)
     # shuffling the training data
     random.seed(1)
     random.shuffle(data_train)
@@ -206,40 +225,86 @@ if __name__ == "__main__":
     # creating the classifier
     rnn_classifier = RnnClassifier(len(word2id), n_classes, word2id)
 
-    
-    difference_rate = 0.03
-    previous_run_accuracy = 0.0
-    current_run_accuracy = 0.03
-    i = 1
-    runs = 10 
-    while(i <= runs):
-        # training
-        i = i+1
+    # open file to write ouput
+    ts = time.time()
+    st = datetime.datetime.fromtimestamp(ts).strftime('%Y%m%d-%H%M%S')
+    pdir = "results/" + st
+
+    os.makedirs(pdir)
+    pdir += "/"
+    output_filename = pdir + st + ".txt"
+
+    with open(output_filename, "w") as f:
+        # initializing lists for plotting
+        x = range(1, epochs+1)
+
+        acc_train = []
+        acc_test = []
+        
+        cost_train = []
+        cost_test = []
+        
+        mse_train = []
+        mse_test = []
+
         for epoch in xrange(epochs):
+            # training
             cost_sum = 0.0
             correct = 0
+            mse = 0
             for target_class, sentence in data_train:
-                #print "target_class: " + str(target_class)
-                #print "sentence: " + str(sentence)
                 cost, predicted_class = rnn_classifier.train(sentence, target_class, learningrate)
                 cost_sum += cost
+                mse += (predicted_class - target_class)*(predicted_class - target_class)
                 if predicted_class == target_class:
                     correct += 1
-            print "Epoch: " + str(epoch) + "\tCost: " + str(cost_sum) + "\tAccuracy: " + str(float(correct)/len(data_train))
 
+            f.write("Epoch: " + str(epoch) + "\tCost: " + str(cost_sum) + "\tAccuracy: " + str(float(correct)/len(data_train)) + "\tMSE: " + str(float(mse)/len(data_train)) + "\n")
+            f.flush()
+            # saving train data for plotting
+            acc_train.append(float(correct)/len(data_train))
+            cost_train.append(cost_sum)
+            mse_train.append(float(mse)/len(data_train))
 
-        # testing
-        cost_sum = 0.0
-        correct = 0
-        for target_class, sentence in data_test:
-            #print "target_class: " + str(target_class)
-            #print "sentence: " + str(sentence)  
-            cost, predicted_class = rnn_classifier.test(sentence, target_class)
-            cost_sum += cost
-            if predicted_class == target_class:
-                correct += 1
-        print "Test_cost: " + str(cost_sum) + "\tTest_accuracy: " + str(float(correct)/len(data_test))
-        previous_run_accuracy = current_run_accuracy
-        current_run_accuracy = float(correct)/len(data_test)
-    
+            # testing
+            cost_sum = 0.0
+            correct = 0
+            mse = 0
+            
+            for target_class, sentence in data_test:
+                cost, predicted_class = rnn_classifier.test(sentence, target_class)
+                cost_sum += cost
+                mse += (predicted_class - target_class)*(predicted_class - target_class)
+                if predicted_class == target_class:
+                    correct += 1
+            
+            f.write("Test_cost: " + str(cost_sum) + "\tTest_accuracy: " + str(float(correct)/len(data_test)) + "\tMSE: " + str(float(mse)/len(data_test)) + "\n")
+            f.flush()
+            # saving test data for plotting
+            acc_test.append(float(correct)/len(data_test))
+            cost_test.append(cost_sum)
+            mse_test.append(float(mse)/len(data_test))    
+        f.close()
+        
+        #plotting results
+        xlabel = "Epochs"
+        #plot accuracy
+        acc_ylabel = "Accuracy"
+        acc_fname = pdir+st+"-accuracy.jpg"
+        acc_ylim = 1.0
+        plot(x, x, acc_train, acc_test, acc_fname, xlabel, acc_ylabel, acc_ylim, plot_caption)
+        
+        #plot costs
+        cost_ylabel = "Cost"
+        cost_fname = pdir+st+"-cost.jpg"
+        cost_ylim = max(max(cost_train), max(cost_test))
+        plot(x, x, cost_train, cost_test, cost_fname, xlabel, cost_ylabel, cost_ylim, plot_caption)
+        
+        #plot mean squared errors
+        mse_ylabel = "Mean Squared Error"
+        mse_fname = pdir+st+"-mse.jpg"
+        mse_ylim = 25.0
+        plot(x, x, mse_train, mse_test, mse_fname, xlabel, mse_ylabel, mse_ylim, plot_caption)
+        
+
 
