@@ -149,7 +149,7 @@ def read_dataset(path):
         for line in f:
             line_parts = line.strip().split(",")
             #print str(line_parts)
-            dataset.append((line_parts[0], line_parts[1]:[-1], get_level_from_string(line_parts[2])))
+            dataset.append((line_parts[0], line_parts[1][:-1], get_level_from_string(line_parts[2])))
     #print str(dataset)
     return dataset
 
@@ -196,7 +196,7 @@ if __name__ == "__main__":
     path_test = sys.argv[2]
 
     # training parameters
-    min_freq = -1
+    min_freq = 1
     epochs = 25
     learningrate = 0.01
     n_classes = 6
