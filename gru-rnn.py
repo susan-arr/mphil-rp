@@ -4,10 +4,12 @@ import collections
 import numpy
 import random
 
+from gensim.models import Word2Vec
+
 floatX=theano.config.floatX
 
 class RnnClassifier(object):
-    def __init__(self, n_words, n_classes):
+    def __init__(self, n_words, n_classes, word2id):
         # network parameters
         random_seed = 42
         word_embedding_size = 300
@@ -26,7 +28,9 @@ class RnnClassifier(object):
         learningrate = theano.tensor.fscalar('learningrate')
 
         # creating the matrix of word embeddings
-        word_embeddings = self.create_parameter_matrix('word_embeddings', (n_words, word_embedding_size))
+        
+        word_embeddings = self.create_word_vectors('word_embeddings', (n_words, word_embedding_size), word2id)
+        theano.pp(word_embeddings)
 
         # extract the relevant word embeddings, given the input word indices
         input_vectors = word_embeddings[input_indices]
@@ -78,7 +82,20 @@ class RnnClassifier(object):
         vals = numpy.asarray(self.rng.normal(loc=0.0, scale=0.1, size=size), dtype=floatX)
         self.params[name] = theano.shared(vals, name)
         return self.params[name]
-
+    def create_word_vectors(self, name, size, word2id):
+        model = Word2Vec.load_word2vec_format("/Users/shushan/word2vec/word2vec-trimmed.bin", binary=True)
+        vals = numpy.asarray(self.rng.normal(loc=0.0, scale=0.1, size=size), dtype=floatX)
+        i = 0
+        for word in word2id:
+            try:
+                vals[i] = model[word]
+                #print "word: " + word
+            except Exception, e:
+                pass
+                #print "Exception thrown for word: " + word + ", vector value for it is " + str(vals[i])  
+            i = i + 1 
+        self.params[name] = theano.shared(vals, name)
+        return self.params[name]
 
 def _slice(M, slice_num, total_slices):
     """ Helper function for extracting a slice from a tensor"""
@@ -166,7 +183,7 @@ if __name__ == "__main__":
     # training parameters
     min_freq = -1
     epochs = 3
-    learningrate = 0.1
+    learningrate = 0.0025
     n_classes = 6
 
     # reading the datasets
@@ -187,7 +204,7 @@ if __name__ == "__main__":
     random.shuffle(data_train)
 
     # creating the classifier
-    rnn_classifier = RnnClassifier(len(word2id), n_classes)
+    rnn_classifier = RnnClassifier(len(word2id), n_classes, word2id)
 
     
     difference_rate = 0.03
